@@ -2,6 +2,7 @@
 from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
+import struct
 
 
 class Streamer:
@@ -16,17 +17,54 @@ class Streamer:
 
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
-        # Your code goes here!  The code below should be changed!
+        chunks = []
+        print('LENGTH BYTES: ' + str(len(data_bytes)))
+        seq_num = 0
+        # for b in data_bytes:
+        #     value = (seq_num, b)
+        #     arg = 'I ' + str(len(b)) + 's'
+        #     s = struct.Struct(arg)
+        #     b = s.pack(*value)
+        #     seq_num += 1
 
-        # for now I'm just sending the raw application-level data in one UDP payload
-        self.socket.sendto(data_bytes, (self.dst_ip, self.dst_port))
+        while len(data_bytes) > 0:
+            if len(data_bytes) > 1472:
+                chunks.append(data_bytes[:1472])
+                data_bytes = data_bytes[1472:]
+            else:
+                chunks.append(data_bytes)
+                data_bytes = []
+
+        sequenced_chunks = []
+        seq_num = 0
+
+        for c in chunks:
+            value = (seq_num, c)
+            arg = 'I ' + str(len(c)) + 's'
+            s = struct.Struct(arg)
+            sequenced_chunks.append(s.pack(*value))
+            seq_num += 1
+
+        for c in sequenced_chunks:
+            # print('SENDING: ' + str(c))
+            self.socket.sendto(c, (self.dst_ip, self.dst_port))
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
-        # your code goes here!  The code below should be changed!
-        
-        # this sample code just calls the recvfrom method on the LossySocket
+
         data, addr = self.socket.recvfrom()
+        # print('RECEIVING: ' + str(data))
+        # for i in range(len(data)):
+        #     print(data[i])
+        arg = 'I ' + str(len(data) - 4) + 's'
+        data = struct.unpack(arg, data)
+        seq_number = data[0]
+        # print('SEQ NUM: ' + str(seq_number))
+        data = data[1]
+        # print('DATA: ' + str(data))
+
+        recv_base = 0
+
         # For now, I'll just pass the full UDP payload to the app
         return data
 
