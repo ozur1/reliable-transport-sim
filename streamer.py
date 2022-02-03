@@ -3,7 +3,7 @@ from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
 import struct
-
+from queue import PriorityQueue
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -18,7 +18,6 @@ class Streamer:
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
         chunks = []
-        print('LENGTH BYTES: ' + str(len(data_bytes)))
         seq_num = 0
         # for b in data_bytes:
         #     value = (seq_num, b)
@@ -28,9 +27,9 @@ class Streamer:
         #     seq_num += 1
 
         while len(data_bytes) > 0:
-            if len(data_bytes) > 1472:
-                chunks.append(data_bytes[:1472])
-                data_bytes = data_bytes[1472:]
+            if len(data_bytes) > 500:
+                chunks.append(data_bytes[:500])
+                data_bytes = data_bytes[500:]
             else:
                 chunks.append(data_bytes)
                 data_bytes = []
@@ -52,21 +51,34 @@ class Streamer:
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
 
+        recv_buffer = {}
+
         data, addr = self.socket.recvfrom()
         # print('RECEIVING: ' + str(data))
         # for i in range(len(data)):
         #     print(data[i])
+
+        expected_seq_num = 0
+
         arg = 'I ' + str(len(data) - 4) + 's'
         data = struct.unpack(arg, data)
         seq_number = data[0]
-        # print('SEQ NUM: ' + str(seq_number))
-        data = data[1]
-        # print('DATA: ' + str(data))
+        payload = data[1]
 
-        recv_base = 0
+        if seq_number == expected_seq_num:
+            expected_seq_num += 1
+            return payload
+        # else if dictionary contains expected, return that and remove from dict, expected ++, add current to dict
+        else:
+            recv_buffer[seq_number] = payload
+
+    # {3, 4, 5, 6, 8, 9, 10}
+
+
+
 
         # For now, I'll just pass the full UDP payload to the app
-        return data
+        return payload
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
