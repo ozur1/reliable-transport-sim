@@ -70,6 +70,14 @@ class Streamer:
         output = b''
 
         #print(payload)
+        
+            
+            
+        #print(recv_buffer)        
+        if seq_number == Streamer.expected_seq_num:
+            Streamer.expected_seq_num += 1
+            output += payload
+        # else if dictionary contains expected, return that and remove from dict, expected ++, add current to dict
         while seq_number != Streamer.expected_seq_num:
             
             Streamer.recv_buffer[seq_number] = payload
@@ -79,13 +87,6 @@ class Streamer:
                 Streamer.expected_seq_num += 1
             else:
                 break
-            
-            
-        #print(recv_buffer)        
-        if seq_number == Streamer.expected_seq_num:
-            Streamer.expected_seq_num += 1
-            output += payload
-        # else if dictionary contains expected, return that and remove from dict, expected ++, add current to dict
         return output
 
     # {3, 4, 5, 6, 8, 9, 10}
