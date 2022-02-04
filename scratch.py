@@ -27,3 +27,72 @@ b = bytearray(b)
 #     print("")
 
 
+'''
+buffer = {}
+expected =  0
+output = ''
+
+0 arrives
+buffer = {0}
+expected in buffer
+output = 0
+buffer = {}
+expected = 1
+expected not in buffer
+return 0
+
+2 arrives
+buffer = {2}
+expected not in buffer
+return ''
+
+3 arrives
+buffer = {2, 3}
+expected not in buffer
+return ''
+
+5 arrives
+buffer = {2, 3, 5}
+expected not in buffer
+return ''
+
+6 arrives
+buffer = {2, 3, 5, 6}
+expected not in buffer
+return ''
+
+1 arrives
+buffer = {2, 3, 5, 6, 1}
+expected in buffer
+output = 1
+buffer = {2, 3, 5, 6}
+expected = 2
+expected in buffer
+output = 1, 2
+buffer = {3, 5, 6}
+expected = 3
+expected in buffer
+output = 1, 2, 3
+buffer = {5, 6}
+expected = 4
+expected not in buffer
+return 1, 2, 3
+
+4 arrives
+buffer = {5, 6, 4}
+expected in buffer
+output = 4
+buffer = {5, 6}
+expected = 5
+expected in buffer
+output = 4, 5
+buffer = {6}
+expected = 6
+expected in buffer
+output = 4, 5, 6
+buffer = {}
+expected = 7
+expected not in buffer
+return 4, 5, 6
+
+'''

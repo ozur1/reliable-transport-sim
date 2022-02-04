@@ -9,8 +9,8 @@ random.seed(398120)
 
 
 class SimulationParams:
-    def __init__(self, loss_rate: float=0.0, corruption_rate: float=0.0,
-                 max_delivery_delay: float=0.0, become_reliable_after: float=100000.0):
+    def __init__(self, loss_rate: float = 0.0, corruption_rate: float = 0.0,
+                 max_delivery_delay: float = 0.0, become_reliable_after: float = 100000.0):
         self.start_time = time()
         self.loss_rate = loss_rate
         self.corruption_rate = corruption_rate
@@ -19,6 +19,7 @@ class SimulationParams:
 
     def forced_reliable(self) -> bool:
         return time() - self.start_time > self.become_reliable_after
+
 
 class SimulationStats:
     def __init__(self):
@@ -32,10 +33,10 @@ class SimulationStats:
         # print some stats
         print("PACKETS_SENT=%d" % self.packets_sent)
         print("UDP_BYTES_SENT=%d" % self.bytes_sent)
-        print("ETH_BYTES_SENT=%d" % (self.bytes_sent + (18+20+8) * self.packets_sent))
+        print("ETH_BYTES_SENT=%d" % (self.bytes_sent + (18 + 20 + 8) * self.packets_sent))
         print("PACKETS_RECV=%d" % self.packets_recv)
         print("UDP_BYTES_RECV=%d" % self.bytes_recv)
-        print("ETH_BYTES_RECV=%d" % (self.bytes_recv + (18+20+8) * self.packets_recv))
+        print("ETH_BYTES_RECV=%d" % (self.bytes_recv + (18 + 20 + 8) * self.packets_recv))
 
 
 # global simulation parameters
@@ -91,7 +92,7 @@ class LossyUDP(socket):
             Timer(0 if sim.forced_reliable() else random.random() * sim.max_delivery_delay,
                   lambda: super(self.__class__, self).sendto(message, dst)).start()
 
-    def recvfrom(self, bufsize: int=2048) -> (bytes, (str, int)):
+    def recvfrom(self, bufsize: int = 2048) -> (bytes, (str, int)):
         """Blocks until a packet is received or self.stoprecv() is called.
            returns (data, (source_ip, source_port))"""
         while not self.stopped:
