@@ -18,20 +18,24 @@ class Streamer:
         self.seq_num = 0
         self.expected_seq_num = 0
         self.recv_buffer = {}
-        # executor = ThreadPoolExecutor(max_workers=1)
-        # executor.submit(self.listener)
+        self.ACK = False
+        self.ACK_log = {}
+        self.closed = False
+        executor = ThreadPoolExecutor(max_workers=1)
+        executor.submit(self.listener)
 
-    # def listener(self):
-    #     while not self.closed:
-    #         try:
-    #             data, addr = self.socket.recvfrom()
-    #             # store the data in the receive buffer
-    #             arg = 'I ' + str(len(data) - 4) + 's'
-    #             data = struct.unpack(arg, data)
-    #             self.recv_buffer[data[0]] = data[1]
-    #         except Exception as e:
-    #             print("listener died!")
-    #             print(e)
+    def listener(self):
+        while not self.closed:
+            try:
+                data, addr = self.socket.recvfrom()
+                # store the data in the receive buffer
+                arg = 'I ' + '? ' + str(len(data) - 5) + 's'
+                data = struct.unpack(arg, data)
+                self.recv_buffer[data[0]] = data[2]
+                self.ACK_log[data[0]] = data[1]
+            except Exception as e:
+                print("listener died!")
+                print(e)
 
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
@@ -46,8 +50,8 @@ class Streamer:
 
         sequenced_chunks = []
         for c in chunks:
-            value = (self.seq_num, c)
-            arg = 'I ' + str(len(c)) + 's'
+            value = (self.seq_num, self.ACK, c)
+            arg = 'I ' + '? ' + str(len(c)) + 's'
             s = struct.Struct(arg)
             sequenced_chunks.append(s.pack(*value))
             self.seq_num += 1
@@ -57,12 +61,6 @@ class Streamer:
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
-
-        data, addr = self.socket.recvfrom()
-        arg = 'I ' + str(len(data) - 4) + 's'
-        data = struct.unpack(arg, data)
-        self.recv_buffer[data[0]] = data[1]
-
         output = b''
 
         while self.expected_seq_num in self.recv_buffer:
@@ -76,5 +74,5 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
-        # self.closed = True
-        # self.socket.stoprecv()
+        self.closed = True
+        self.socket.stoprecv()
