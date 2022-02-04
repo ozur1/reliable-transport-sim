@@ -25,72 +25,26 @@ for c in chunks:
     print("")
 
 
-'''
-buffer = {}
-expected =  0
-output = ''
+""" 
+HOST 1                                  HOST 2
+ACK_log = {}                            ACK_log = {}
+                                        seq_num not in ACK_log, send false
+                                        send(0, False, b'0')
+                                        seq_num not in ACK_log, add false
+                                        ACK_log = {0: False}
+receive(0, False, b'0')
+sqe_num not in ACK_log, add false
+ACK_log = {0: False}
 
-0 arrives
-buffer = {0}
-expected in buffer
-output = 0
-buffer = {}
-expected = 1
-expected not in buffer
-return 0
+seq_num in ACK_log, send true
+send(0, True, b'0')
+seq_num in ACK_log, flip true
+ACK_log = {0: True}
 
-2 arrives
-buffer = {2}
-expected not in buffer
-return ''
+                                        receive(0, True, b'0')
+                                        seq_num is in ACK_log, flip true
+                                        ACK_log = {0: True}
+                                        
 
-3 arrives
-buffer = {2, 3}
-expected not in buffer
-return ''
 
-5 arrives
-buffer = {2, 3, 5}
-expected not in buffer
-return ''
-
-6 arrives
-buffer = {2, 3, 5, 6}
-expected not in buffer
-return ''
-
-1 arrives
-buffer = {2, 3, 5, 6, 1}
-expected in buffer
-output = 1
-buffer = {2, 3, 5, 6}
-expected = 2
-expected in buffer
-output = 1, 2
-buffer = {3, 5, 6}
-expected = 3
-expected in buffer
-output = 1, 2, 3
-buffer = {5, 6}
-expected = 4
-expected not in buffer
-return 1, 2, 3
-
-4 arrives
-buffer = {5, 6, 4}
-expected in buffer
-output = 4
-buffer = {5, 6}
-expected = 5
-expected in buffer
-output = 4, 5
-buffer = {6}
-expected = 6
-expected in buffer
-output = 4, 5, 6
-buffer = {}
-expected = 7
-expected not in buffer
-return 4, 5, 6
-
-'''
+"""

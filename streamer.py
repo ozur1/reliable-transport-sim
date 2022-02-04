@@ -4,6 +4,7 @@ from lossy_socket import LossyUDP
 from socket import INADDR_ANY
 import struct
 from concurrent.futures.thread import ThreadPoolExecutor
+import time
 
 
 class Streamer:
@@ -33,6 +34,7 @@ class Streamer:
                 data = struct.unpack(arg, data)
                 self.recv_buffer[data[0]] = data[2]
                 self.ACK_log[data[0]] = data[1]
+
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -50,6 +52,8 @@ class Streamer:
 
         sequenced_chunks = []
         for c in chunks:
+            if self.seq_num in self.ACK_log:
+                self.ACK = True
             value = (self.seq_num, self.ACK, c)
             arg = 'I ' + '? ' + str(len(c)) + 's'
             s = struct.Struct(arg)
@@ -57,7 +61,14 @@ class Streamer:
             self.seq_num += 1
 
         for c in sequenced_chunks:
+            self.seq_num = 0
             self.socket.sendto(c, (self.dst_ip, self.dst_port))
+            if self.seq_num in self.ACK_log:
+                self.ACK_log[self.seq_num] = True
+            else:
+                self.ACK_log[self.seq_num] = False
+            while not self.ACK_log[self.seq_num]:
+                time.sleep(0.01)
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
