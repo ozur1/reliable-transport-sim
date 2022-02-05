@@ -18,8 +18,8 @@ class Streamer:
         self.dst_port = dst_port
         self.seq_num = 0
         self.expected_seq_num = 0
+        self.expected_ack_num = 0
         self.recv_buffer = {}
-        self.ACK = False
         self.ACK_log = {}
         self.closed = False
         executor = ThreadPoolExecutor(max_workers=1)
@@ -29,11 +29,14 @@ class Streamer:
         while not self.closed:
             try:
                 data, addr = self.socket.recvfrom()
-                # store the data in the receive buffer
                 arg = 'I ' + '? ' + str(len(data) - 5) + 's'
                 data = struct.unpack(arg, data)
-                self.recv_buffer[data[0]] = data[2]
-                self.ACK_log[data[0]] = data[1]
+                self.recv_buffer[data[0]] = (data[1], data[2])
+
+                if self.seq_num in self.recv_buffer:
+                    if self.recv_buffer[self.seq_num][0]:
+                        self.ACK_log[self.seq_num] = True
+                        del self.recv_buffer[self.seq_num]
 
             except Exception as e:
                 print("listener died!")
@@ -50,34 +53,59 @@ class Streamer:
                 chunks.append(data_bytes)
                 data_bytes = []
 
-        sequenced_chunks = []
         for c in chunks:
-            if self.seq_num in self.ACK_log:
-                self.ACK = True
-            value = (self.seq_num, self.ACK, c)
+            value = (self.seq_num, False, c)
             arg = 'I ' + '? ' + str(len(c)) + 's'
             s = struct.Struct(arg)
-            sequenced_chunks.append(s.pack(*value))
-            self.seq_num += 1
+            sequenced_c = s.pack(*value)
+            self.ACK_log[self.seq_num] = False
 
-        for c in sequenced_chunks:
-            self.seq_num = 0
-            self.socket.sendto(c, (self.dst_ip, self.dst_port))
-            if self.seq_num in self.ACK_log:
-                self.ACK_log[self.seq_num] = True
-            else:
-                self.ACK_log[self.seq_num] = False
+            self.socket.sendto(sequenced_c, (self.dst_ip, self.dst_port))
             while not self.ACK_log[self.seq_num]:
+                # print("ACK_LOG: " + str(self.ACK_log))
                 time.sleep(0.01)
+
+            self.seq_num += 1
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         output = b''
 
+
+        '''
+        seq_num = expected_seq_num
+        ACK = self.recv_buffer[self.expected_seq_num][0]
+        payload = self.recv_buffer[self.expected_seq_num][1]
+        
+        if expected_seq_num in recv_buffer
+            if ACK = False
+                send reply with same seq num, ACK = True, payload = b''
+                append to output
+                delete from recv buffer
+                expected ++
+            if ACK = True
+                flip ACK log at seq num
+                delete from recv buffer
+            
+        '''
+
         while self.expected_seq_num in self.recv_buffer:
-            output += self.recv_buffer[self.expected_seq_num]
-            del self.recv_buffer[self.expected_seq_num]
-            self.expected_seq_num += 1
+            ack = self.recv_buffer[self.expected_seq_num][0]
+            if ack:
+                print("ACK BIT TRUE")
+                # self.ACK_log[self.expected_seq_num] = True
+                # del self.recv_buffer[self.expected_seq_num]
+            else:
+                payload = self.recv_buffer[self.expected_seq_num][1]
+                output += payload
+                del self.recv_buffer[self.expected_seq_num]
+
+                value = (self.expected_seq_num, True, b'')
+                s = struct.Struct('I ? 1s')
+                response = s.pack(*value)
+                self.socket.sendto(response, (self.dst_ip, self.dst_port))
+
+                self.expected_seq_num += 1
 
         return output
 
