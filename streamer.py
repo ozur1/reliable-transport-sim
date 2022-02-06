@@ -9,6 +9,9 @@ import hashlib
 
 
 class Streamer:
+    #implement 1 single absolute timer
+    #Change ACK_log to be a List
+    #input timeout value
     def __init__(self, dst_ip, dst_port,
                  src_ip=INADDR_ANY, src_port=0):
         """Default values listen on all network interfaces, chooses a random source port,
@@ -30,7 +33,8 @@ class Streamer:
     '''
     Packet Format: (seq_num, ACK, FIN, checksum payload)
     '''
-
+    #remove ack from ack_log once received
+    #clear ack_log and set sequence number to ack_log[0][0] if timer - ack_log[0][1] > timeout
     def listener(self):
         while not self.closed:
             try:
@@ -68,7 +72,9 @@ class Streamer:
             except Exception as e:
                 print("listener died!")
                 print(e)
-
+    
+    #Change send to continue sending incremented packets regardless of recieving an ACK
+    #Change second loop to a while loop, accessing the chunks list via sequence number
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
         chunks = []
