@@ -5,6 +5,7 @@ from socket import INADDR_ANY
 import struct
 from concurrent.futures.thread import ThreadPoolExecutor
 import time
+import hashlib
 
 
 class Streamer:
@@ -27,38 +28,43 @@ class Streamer:
         executor.submit(self.listener)
 
     '''
-    Packet Format: (seq_num, ACK, FIN, payload)
+    Packet Format: (seq_num, ACK, FIN, checksum payload)
     '''
 
     def listener(self):
         while not self.closed:
             try:
                 data, addr = self.socket.recvfrom()
-                arg = 'I ' + '? ' + '? ' + str(len(data) - 6) + 's'
+                arg = 'I ' + '? ' + '? ' + '16s' + str(len(data) - 22) + 's'
                 data = struct.unpack(arg, data)
                 '''
                 data[0] = seq_num
                 data[1] = ACK bit
                 data[2] = FIN bit
-                data[3] = Payload
+                data[3] = checksum
+                data[4] = Payload
                 '''
-
-                if data[1] and not data[2]:
+                newHash = self.hashify(data[0], data[1], data[2], data[4])
+                if newHash != data[3]:
+                    continue
+                elif data[1] and not data[2]:
                     self.ACK_log[data[0]] = True
                 elif data[2] and not data[1]:
                     self.received_FIN = True
-                    value = (data[0], True, True, b'')
-                    s = struct.Struct('I ? ? 1s')
+                    sendHash = self.hashify(data[0], True, True, b'')
+                    value = (data[0], True, True, sendHash, b'')
+                    s = struct.Struct('I ? ? 16s 0s')
                     response = s.pack(*value)
                     self.socket.sendto(response, (self.dst_ip, self.dst_port))
                 elif data[1] and data[2]:
                     self.received_FINACK = True
                 else:  # no ACK or FIN, just data
-                    value = (data[0], True, False, b'')
-                    s = struct.Struct('I ? ? 1s')
+                    sendHash = self.hashify(data[0], True, False, b'')
+                    value = (data[0], True, False, sendHash,  b'')
+                    s = struct.Struct('I ? ? 16s 0s')
                     response = s.pack(*value)
                     self.socket.sendto(response, (self.dst_ip, self.dst_port))
-                    self.recv_buffer[data[0]] = (data[1], data[2], data[3])
+                    self.recv_buffer[data[0]] = (data[1], data[2], data[4])
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -75,8 +81,9 @@ class Streamer:
                 data_bytes = []
 
         for c in chunks:
-            value = (self.seq_num, False, False, c)
-            arg = 'I ' + '? ' + '? ' + str(len(c)) + 's'
+            outHash = self.hashify(self.seq_num, False, False, c)
+            value = (self.seq_num, False, False, outHash, c)
+            arg = 'I ' + '? ' + '? ' + '16s' + str(len(c)) + 's'
             s = struct.Struct(arg)
             packet = s.pack(*value)
 
@@ -108,8 +115,9 @@ class Streamer:
         # Part 5 code will go here
 
         # Send FIN Packet
-        value = (self.seq_num, False, True, b'')
-        arg = 'I ? ? 1s'
+        outHash = self.hashify(self.seq_num, False, True , b'')
+        value = (self.seq_num, False, True, outHash , b'')
+        arg = 'I ? ? 16s 0s'
         s = struct.Struct(arg)
         packet = s.pack(*value)
 
@@ -121,3 +129,11 @@ class Streamer:
 
         self.closed = True
         self.socket.stoprecv()
+    
+    def hashify(self, a1, a2, a3, a4):
+        m = hashlib.md5()
+        temparg = 'I ' + '? ' + '? ' + str(len(a4)) + 's'
+        tempV = (a1, a2, a3, a4)
+        
+        m.update(struct.pack(temparg, *tempV))
+        return m.digest()
