@@ -18,26 +18,47 @@ class Streamer:
         self.dst_port = dst_port
         self.seq_num = 0
         self.expected_seq_num = 0
-        self.expected_ack_num = 0
         self.recv_buffer = {}
         self.ACK_log = {}
+        self.received_FIN = False
+        self.received_FINACK = False
         self.closed = False
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(self.listener)
+
+    '''
+    Packet Format: (seq_num, ACK, FIN, payload)
+    '''
 
     def listener(self):
         while not self.closed:
             try:
                 data, addr = self.socket.recvfrom()
-                arg = 'I ' + '? ' + str(len(data) - 5) + 's'
+                arg = 'I ' + '? ' + '? ' + str(len(data) - 6) + 's'
                 data = struct.unpack(arg, data)
-                self.recv_buffer[data[0]] = (data[1], data[2])
+                '''
+                data[0] = seq_num
+                data[1] = ACK bit
+                data[2] = FIN bit
+                data[3] = Payload
+                '''
 
-                if self.seq_num in self.recv_buffer:
-                    if self.recv_buffer[self.seq_num][0]:
-                        self.ACK_log[self.seq_num] = True
-                        del self.recv_buffer[self.seq_num]
-
+                if data[1] and not data[2]:
+                    self.ACK_log[data[0]] = True
+                elif data[2] and not data[1]:
+                    self.received_FIN = True
+                    value = (data[0], True, True, b'')
+                    s = struct.Struct('I ? ? 1s')
+                    response = s.pack(*value)
+                    self.socket.sendto(response, (self.dst_ip, self.dst_port))
+                elif data[1] and data[2]:
+                    self.received_FINACK = True
+                else:  # no ACK or FIN, just data
+                    value = (data[0], True, False, b'')
+                    s = struct.Struct('I ? ? 1s')
+                    response = s.pack(*value)
+                    self.socket.sendto(response, (self.dst_ip, self.dst_port))
+                    self.recv_buffer[data[0]] = (data[1], data[2], data[3])
             except Exception as e:
                 print("listener died!")
                 print(e)
@@ -54,16 +75,16 @@ class Streamer:
                 data_bytes = []
 
         for c in chunks:
-            value = (self.seq_num, False, c)
-            arg = 'I ' + '? ' + str(len(c)) + 's'
+            value = (self.seq_num, False, False, c)
+            arg = 'I ' + '? ' + '? ' + str(len(c)) + 's'
             s = struct.Struct(arg)
-            sequenced_c = s.pack(*value)
+            packet = s.pack(*value)
+
             self.ACK_log[self.seq_num] = False
 
-            self.socket.sendto(sequenced_c, (self.dst_ip, self.dst_port))
             while not self.ACK_log[self.seq_num]:
-                # print("ACK_LOG: " + str(self.ACK_log))
-                time.sleep(0.01)
+                self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+                time.sleep(0.25)
 
             self.seq_num += 1
 
@@ -71,41 +92,11 @@ class Streamer:
         """Blocks (waits) if no data is ready to be read from the connection."""
         output = b''
 
-
-        '''
-        seq_num = expected_seq_num
-        ACK = self.recv_buffer[self.expected_seq_num][0]
-        payload = self.recv_buffer[self.expected_seq_num][1]
-        
-        if expected_seq_num in recv_buffer
-            if ACK = False
-                send reply with same seq num, ACK = True, payload = b''
-                append to output
-                delete from recv buffer
-                expected ++
-            if ACK = True
-                flip ACK log at seq num
-                delete from recv buffer
-            
-        '''
-
         while self.expected_seq_num in self.recv_buffer:
-            ack = self.recv_buffer[self.expected_seq_num][0]
-            if ack:
-                print("ACK BIT TRUE")
-                # self.ACK_log[self.expected_seq_num] = True
-                # del self.recv_buffer[self.expected_seq_num]
-            else:
-                payload = self.recv_buffer[self.expected_seq_num][1]
-                output += payload
-                del self.recv_buffer[self.expected_seq_num]
-
-                value = (self.expected_seq_num, True, b'')
-                s = struct.Struct('I ? 1s')
-                response = s.pack(*value)
-                self.socket.sendto(response, (self.dst_ip, self.dst_port))
-
-                self.expected_seq_num += 1
+            payload = self.recv_buffer[self.expected_seq_num][2]
+            output += payload
+            del self.recv_buffer[self.expected_seq_num]
+            self.expected_seq_num += 1
 
         return output
 
@@ -113,5 +104,20 @@ class Streamer:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
+
+        # Part 5 code will go here
+
+        # Send FIN Packet
+        value = (self.seq_num, False, True, b'')
+        arg = 'I ? ? 1s'
+        s = struct.Struct(arg)
+        packet = s.pack(*value)
+
+        while not self.received_FIN or not self.received_FINACK:
+            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+            time.sleep(0.25)
+
+        time.sleep(2)
+
         self.closed = True
         self.socket.stoprecv()

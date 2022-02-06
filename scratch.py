@@ -4,8 +4,8 @@ import random
 chunks = [b'0', b'1', b'2', b'3', b'4', b'5', b'6', b'7', b'8', b'9', b'10', b'11', b'12', b'13', b'14', b'15', b'16', b'17']
 seq_num = 0
 
-value = (0, True, b'')
-s = struct.Struct('I ? 1s')
+value = (0, True, False, b'')
+s = struct.Struct('I ? ? 1s')
 packed_data = s.pack(*value)
 print('Original values:', value)
 print('Format string  :', s.format)
