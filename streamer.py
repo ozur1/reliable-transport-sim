@@ -33,8 +33,6 @@ class Streamer:
         self.timeout = 0.25
         executor1 = ThreadPoolExecutor(max_workers=1)
         executor1.submit(self.listener)
-        executor2 = ThreadPoolExecutor(max_workers=1)
-        executor2.submit(self.manager)
 
     '''
     Packet Format: (seq_num, ACK, FIN, checksum payload)
@@ -55,12 +53,12 @@ class Streamer:
                 data[3] = checksum
                 data[4] = Payload
                 '''
+
                 newHash = self.hashify(data[0], data[1], data[2], data[4])
                 if newHash != data[3]:
                     continue
                 elif data[1] and not data[2]:
-                    with self.lock:
-                        self.removeACK(data[0])
+                    self.removeACK(data[0])
                 elif data[2] and not data[1]:
                     self.received_FIN = True
                     sendHash = self.hashify(data[0], True, True, b'')
@@ -77,24 +75,23 @@ class Streamer:
                     response = s.pack(*value)
                     self.socket.sendto(response, (self.dst_ip, self.dst_port))
                     self.recv_buffer[data[0]] = (data[1], data[2], data[4])
+                
+                absTime = time.time() - self.initTimer 
+                if self.ACK_log:
+                    print("Length is: " + str(len(self.ACK_log)))
+                    with self.lock:
+                        print("Top is: " + str(self.ACK_log[0][0]))
+                        if absTime - self.ACK_log[0][1] > self.timeout:
+                            payload = self.ACK_log[0][2]
+                            self.ACK_log.pop(0)
+                            self.sendhelp(payload)
+                            
             except Exception as e:
                 print("listener died!")
                 print(e)
     #write manager method
     #times will be stored relative to the initialization of the Streamer
     #clear ack_log and set sequence number to ack_log[0][0] if timer - ack_log[0][1] > timeout
-    def manager(self):
-        while not self.closed:
-            try:
-                absTime = time.time() - self.initTimer 
-                if self.ACK_log:
-                    if absTime - self.ACK_log[0][1] > self.timeout:
-                        with self.lock:
-                            self.seq_num = self.ACK_log[0][0] 
-                            self.ACK_log = []
-            except Exception as e:
-                print("manager died!")
-                print(e)
 
 
     #Change send to continue sending incremented packets regardless of recieving an ACK
@@ -109,17 +106,10 @@ class Streamer:
             else:
                 chunks.append(data_bytes)
                 data_bytes = []
-
-        while self.seq_num < len(chunks):
-            outHash = self.hashify(self.seq_num, False, False, chunks[self.seq_num])
-            value = (self.seq_num, False, False, outHash, chunks[self.seq_num])
-            arg = 'I ' + '? ' + '? ' + '16s' + str(len(chunks[self.seq_num])) + 's'
-            s = struct.Struct(arg)
-            packet = s.pack(*value)
-
-            self.ACK_log.append((self.seq_num, time.time() - self.initTimer))
-            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
-
+        
+        print(len(chunks))
+        for i in range(len(chunks)):
+            self.sendhelp(chunks[i])
             self.seq_num += 1
 
     def recv(self) -> bytes:
@@ -174,3 +164,14 @@ class Streamer:
             if self.ACK_log[i][0] == num:
                 self.ACK_log.pop(i)
                 return
+
+    def sendhelp(self, payload):
+        outHash = self.hashify(self.seq_num, False, False, payload)
+        value = (self.seq_num, False, False, outHash, payload)
+        arg = 'I ' + '? ' + '? ' + '16s' + str(len(payload)) + 's'
+        s = struct.Struct(arg)
+        packet = s.pack(*value)
+        with self.lock:
+            self.ACK_log.append((self.seq_num, time.time() - self.initTimer, payload))
+        self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+        return
