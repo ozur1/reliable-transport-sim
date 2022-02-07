@@ -78,13 +78,15 @@ class Streamer:
                 
                 absTime = time.time() - self.initTimer 
                 if self.ACK_log:
-                    print("Length is: " + str(len(self.ACK_log)))
+                    #print("Length is: " + str(len(self.ACK_log)))
                     with self.lock:
-                        print("Top is: " + str(self.ACK_log[0][0]))
+                        #print("Top is: " + str(self.ACK_log[0][0]))
                         if absTime - self.ACK_log[0][1] > self.timeout:
+                            #print("Packet timed out : " + str(self.ACK_log[0][0]))
+                            seq = self.ACK_log[0][0]
                             payload = self.ACK_log[0][2]
                             self.ACK_log.pop(0)
-                            self.sendhelp(payload)
+                            self.sendhelp(seq, payload)
                             
             except Exception as e:
                 print("listener died!")
@@ -107,10 +109,10 @@ class Streamer:
                 chunks.append(data_bytes)
                 data_bytes = []
         
-        print(len(chunks))
         for i in range(len(chunks)):
-            self.sendhelp(chunks[i])
-            self.seq_num += 1
+            with self.lock:
+                self.sendhelp(self.seq_num, chunks[i])
+                self.seq_num += 1
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
@@ -165,13 +167,13 @@ class Streamer:
                 self.ACK_log.pop(i)
                 return
 
-    def sendhelp(self, payload):
-        outHash = self.hashify(self.seq_num, False, False, payload)
-        value = (self.seq_num, False, False, outHash, payload)
+    def sendhelp(self, seq, payload):
+        outHash = self.hashify(seq, False, False, payload)
+        value = (seq, False, False, outHash, payload)
         arg = 'I ' + '? ' + '? ' + '16s' + str(len(payload)) + 's'
         s = struct.Struct(arg)
         packet = s.pack(*value)
-        with self.lock:
-            self.ACK_log.append((self.seq_num, time.time() - self.initTimer, payload))
+        self.ACK_log.append((seq, time.time() - self.initTimer, payload))
+        #print("Sending Packet no. " + str(seq))
         self.socket.sendto(packet, (self.dst_ip, self.dst_port))
         return
