@@ -6,6 +6,7 @@ import struct
 from concurrent.futures.thread import ThreadPoolExecutor
 import time
 import hashlib
+from threading import Lock
 
 
 class Streamer:
@@ -16,6 +17,7 @@ class Streamer:
                  src_ip=INADDR_ANY, src_port=0):
         """Default values listen on all network interfaces, chooses a random source port,
            and does not introduce any simulated packet loss."""
+        self.lock = Lock()
         self.socket = LossyUDP()
         self.socket.bind((src_ip, src_port))
         self.dst_ip = dst_ip
@@ -23,18 +25,23 @@ class Streamer:
         self.seq_num = 0
         self.expected_seq_num = 0
         self.recv_buffer = {}
-        self.ACK_log = {}
+        self.ACK_log = []
         self.received_FIN = False
         self.received_FINACK = False
         self.closed = False
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(self.listener)
+        self.initTimer = time.time()
+        self.timeout = 0.25
+        executor1 = ThreadPoolExecutor(max_workers=1)
+        executor1.submit(self.listener)
+        executor2 = ThreadPoolExecutor(max_workers=1)
+        executor2.submit(self.manager)
 
     '''
     Packet Format: (seq_num, ACK, FIN, checksum payload)
     '''
+    #Where does lock go?
     #remove ack from ack_log once received
-    #clear ack_log and set sequence number to ack_log[0][0] if timer - ack_log[0][1] > timeout
+    #remove/replace duplicates
     def listener(self):
         while not self.closed:
             try:
@@ -52,7 +59,8 @@ class Streamer:
                 if newHash != data[3]:
                     continue
                 elif data[1] and not data[2]:
-                    self.ACK_log[data[0]] = True
+                    with self.lock:
+                        self.removeACK(data[0])
                 elif data[2] and not data[1]:
                     self.received_FIN = True
                     sendHash = self.hashify(data[0], True, True, b'')
@@ -72,7 +80,23 @@ class Streamer:
             except Exception as e:
                 print("listener died!")
                 print(e)
-    
+    #write manager method
+    #times will be stored relative to the initialization of the Streamer
+    #clear ack_log and set sequence number to ack_log[0][0] if timer - ack_log[0][1] > timeout
+    def manager(self):
+        while not self.closed:
+            try:
+                absTime = time.time() - self.initTimer 
+                if self.ACK_log:
+                    if absTime - self.ACK_log[0][1] > self.timeout:
+                        with self.lock:
+                            self.seq_num = self.ACK_log[0][0] 
+                            self.ACK_log = []
+            except Exception as e:
+                print("manager died!")
+                print(e)
+
+
     #Change send to continue sending incremented packets regardless of recieving an ACK
     #Change second loop to a while loop, accessing the chunks list via sequence number
     def send(self, data_bytes: bytes) -> None:
@@ -86,18 +110,15 @@ class Streamer:
                 chunks.append(data_bytes)
                 data_bytes = []
 
-        for c in chunks:
-            outHash = self.hashify(self.seq_num, False, False, c)
-            value = (self.seq_num, False, False, outHash, c)
-            arg = 'I ' + '? ' + '? ' + '16s' + str(len(c)) + 's'
+        while self.seq_num < len(chunks):
+            outHash = self.hashify(self.seq_num, False, False, chunks[self.seq_num])
+            value = (self.seq_num, False, False, outHash, chunks[self.seq_num])
+            arg = 'I ' + '? ' + '? ' + '16s' + str(len(chunks[self.seq_num])) + 's'
             s = struct.Struct(arg)
             packet = s.pack(*value)
 
-            self.ACK_log[self.seq_num] = False
-
-            while not self.ACK_log[self.seq_num]:
-                self.socket.sendto(packet, (self.dst_ip, self.dst_port))
-                time.sleep(0.25)
+            self.ACK_log.append((self.seq_num, time.time() - self.initTimer))
+            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
 
             self.seq_num += 1
 
@@ -121,6 +142,9 @@ class Streamer:
         # Part 5 code will go here
 
         # Send FIN Packet
+        while not (self.ACK_log):
+            time.sleep(0.25)
+        
         outHash = self.hashify(self.seq_num, False, True , b'')
         value = (self.seq_num, False, True, outHash , b'')
         arg = 'I ? ? 16s 0s'
@@ -143,3 +167,10 @@ class Streamer:
         
         m.update(struct.pack(temparg, *tempV))
         return m.digest()
+    
+    #write removeACK
+    def removeACK(self, num):
+        for i in range(len(self.ACK_log)):
+            if self.ACK_log[i][0] == num:
+                self.ACK_log.pop(i)
+                return
