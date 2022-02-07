@@ -31,6 +31,7 @@ class Streamer:
         self.closed = False
         self.initTimer = time.time()
         self.timeout = 0.25
+        self.recieved = 0
         executor1 = ThreadPoolExecutor(max_workers=1)
         executor1.submit(self.listener)
 
@@ -110,6 +111,10 @@ class Streamer:
                 data_bytes = []
         
         for i in range(len(chunks)):
+            if self.ACK_log:
+                #print("Backlog is: " + str(self.seq_num - self.recieved))
+                while self.seq_num - 100 > self.recieved:
+                    time.sleep(0.1)
             with self.lock:
                 self.sendhelp(self.seq_num, chunks[i])
                 self.seq_num += 1
@@ -162,6 +167,8 @@ class Streamer:
     
     #write removeACK
     def removeACK(self, num):
+        if num > self.recieved:
+            self.recieved = num
         for i in range(len(self.ACK_log)):
             if self.ACK_log[i][0] == num:
                 self.ACK_log.pop(i)
