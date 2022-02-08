@@ -30,7 +30,7 @@ class Streamer:
         self.received_FINACK = False
         self.closed = False
         self.initTimer = time.time()
-        self.timeout = 0.25
+        self.timeout = 0.5
         self.recieved = 0
         executor1 = ThreadPoolExecutor(max_workers=1)
         executor1.submit(self.listener)
@@ -66,24 +66,33 @@ class Streamer:
                     value = (data[0], True, True, sendHash, b'')
                     s = struct.Struct('I ? ? 16s 0s')
                     response = s.pack(*value)
+                    #print("FINACK sent!")
                     self.socket.sendto(response, (self.dst_ip, self.dst_port))
                 elif data[1] and data[2]:
+                    #print("FINACK received!")
                     self.received_FINACK = True
+                    sendHash = self.hashify(data[0], True, True, b'')
+                    value = (data[0], True, True, sendHash, b'')
+                    s = struct.Struct('I ? ? 16s 0s')
+                    response = s.pack(*value)
+                    self.socket.sendto(response, (self.dst_ip, self.dst_port))
+
                 else:  # no ACK or FIN, just data
                     sendHash = self.hashify(data[0], True, False, b'')
                     value = (data[0], True, False, sendHash,  b'')
                     s = struct.Struct('I ? ? 16s 0s')
                     response = s.pack(*value)
+                    #print("received packet no " + str(data[0]))
                     self.socket.sendto(response, (self.dst_ip, self.dst_port))
                     self.recv_buffer[data[0]] = (data[1], data[2], data[4])
                 
                 absTime = time.time() - self.initTimer 
                 if self.ACK_log:
-                    #print("Length is: " + str(len(self.ACK_log)))
                     with self.lock:
                         #print("Top is: " + str(self.ACK_log[0][0]))
+                        #print("Time diff is " + str(absTime - self.ACK_log[0][1]))
                         if absTime - self.ACK_log[0][1] > self.timeout:
-                            #print("Packet timed out : " + str(self.ACK_log[0][0]))
+                            #print("Packet no : " + str(self.ACK_log[0][0]) + " failed")
                             seq = self.ACK_log[0][0]
                             payload = self.ACK_log[0][2]
                             self.ACK_log.pop(0)
@@ -113,8 +122,9 @@ class Streamer:
         for i in range(len(chunks)):
             if self.ACK_log:
                 #print("Backlog is: " + str(self.seq_num - self.recieved))
-                while self.seq_num - 100 > self.recieved:
-                    time.sleep(0.1)
+                #print("Length is: " + str(len(self.ACK_log)))
+                while len(self.ACK_log) > 200:
+                    time.sleep(0.01)
             with self.lock:
                 self.sendhelp(self.seq_num, chunks[i])
                 self.seq_num += 1
@@ -128,30 +138,47 @@ class Streamer:
             output += payload
             del self.recv_buffer[self.expected_seq_num]
             self.expected_seq_num += 1
-
         return output
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
-           the necessary ACKs and retransmissions"""
+        the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
 
         # Part 5 code will go here
 
         # Send FIN Packet
-        while not (self.ACK_log):
+        while self.ACK_log:
+            #print("WAITING")
+            #print("ACK_LOG: " + str(self.ACK_log))
+            absTime = time.time() - self.initTimer 
+            with self.lock:
+                #print("Top is: " + str(self.ACK_log[0][0]))
+                #print("Final send of packet " + str(self.ACK_log))
+                if absTime - self.ACK_log[0][1] > self.timeout:
+                    #print("Packet no : " + str(self.ACK_log[0][0]) + " failed")
+                    seq = self.ACK_log[0][0]
+                    payload = self.ACK_log[0][2]
+                    self.ACK_log.pop(0)
+                    self.sendhelp(seq, payload)
             time.sleep(0.25)
-        
-        outHash = self.hashify(self.seq_num, False, True , b'')
-        value = (self.seq_num, False, True, outHash , b'')
+            
+            
+                            
+
+        #print("ACK LOG IS EMPTY, SEND FIN")
+
+        outHash = self.hashify(self.seq_num, False, True, b'')
+        value = (self.seq_num, False, True, outHash, b'')
         arg = 'I ? ? 16s 0s'
         s = struct.Struct(arg)
         packet = s.pack(*value)
-
+        self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+        #print("FIN SENT")
         while not self.received_FIN or not self.received_FINACK:
-            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+            #print("FIN SENT")
             time.sleep(0.25)
-
+            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
         time.sleep(2)
 
         self.closed = True
@@ -167,8 +194,6 @@ class Streamer:
     
     #write removeACK
     def removeACK(self, num):
-        if num > self.recieved:
-            self.recieved = num
         for i in range(len(self.ACK_log)):
             if self.ACK_log[i][0] == num:
                 self.ACK_log.pop(i)
